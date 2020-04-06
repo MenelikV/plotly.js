@@ -10,6 +10,276 @@ https://github.com/plotly/plotly.js/compare/vX.Y.Z...master
 where X.Y.Z is the semver of most recent plotly.js release.
 
 
+## [1.53.0] -- 2020-03-31
+
+### Added
+ - Introduce `rangebreaks` on date axes mainly thanks to [#4614] with API revision & improvements in
+   [#4639, #4641, #4644, #4649, #4652, #4653, #4660, #4661, #4670, #4677, #4684, #4688, #4695, #4696, #4698, #4699]
+ - Introduce "(x|y) unified" `hovermode` [#4620, #4664, #4669, #4687]
+ - Add "hovered data" mode to `spikesnap` [#4665]
+ - Add "full-json" export format to `Plotly.toImage` and `Plotly.dowloadImage` [#4593]
+ - Add `node.customdata` and `link.customdata` to `sankey` traces [#4621]
+ - Add `opacityscale` for `surface` traces [#4480]
+
+### Changed
+ - Improve `contour` labels (add extra pad) and correct minus sign [#4540]
+ - Improve sizing text inside `pie` and `sunburst` (add extra pad) [#4519]
+ - Improve display of spikelines when `spikedistance` is set to -1 [#4637]
+ - Improve compare `hovermode` to include all points at same coordinate [#4664]
+ - Improve `histogram` hover labels (harmonize start & end values) [#4662]
+ - Display new colors on Plotly's logo [#4691]
+ - Update links & descriptions to Chart Studio Cloud and plotly.com website [#4694]
+ - Update contributing guidelines & add info about trace module architecture [#4624]
+ - Require `config.plotlyServerURL` to be set for Chart Studio export [#4690]
+
+### Fixed
+ - Fix `Plotly.downloadImage` to match transparencies in gl3d plots with the on-screen render [#4566]
+ - Fix amount of transparency applied by `opacity` in `surface` traces [#4480, #4642]
+ - Fix gaps in `bar` traces (regression introduced in 1.50.0) [#4634]
+ - Fix gaps in `funnel` & `waterfall` [#4663]
+ - Fix `template` to set axis `type`, `tickformatstops`, `tick0`, `dtick`, `tickvals` and `tickmode` [#4670, #4685]
+
+
+## [1.52.3] -- 2020-03-02
+
+## Fixed
+- Make identical bundles on different nodes [#4601]
+- Fix (regression introduced in 1.52.1) and improve interactive display of narrow points of `bar`-like traces [#4568]
+- Ensure text fits inside `sunburst` sectors with zero values [#4580]
+- Reset `splom` selectBatch and unselectBatch on updates [#4595]
+- Retry different mobile/tablet config to render gl3d subplots on various devices & browsers e.g. Brave [#4549]
+- Bump `is-mobile` to handle iPad Pro & iPad 7th + iOs v13 + Safari [#4548]
+- Fix `orthographic` hover after scroll zoom [#4562]
+- Preserve gl3d `scene aspectratio` after `orthographic` scroll zoom [#4578]
+- Include gl3d `scene.aspectmode` changes in relayout updates [#4579]
+- Apply utf-8 charset in test_dashboard [#4554]
+
+
+## [1.52.2] -- 2020-02-03
+
+## Fixed
+- Handle 'missing' matching axes [#4529]
+- Fix hover for `mesh3d`, `isosurface` and `volume`
+  when using `plotGlPixelRatio > 1` (bug introduced in 1.45.0) [#4534]
+- Fix hover of `mesh3d` traces with `facecolor` and `intensitymode: 'cell'` [#4539]
+- Fix gl3d rendering on iPad Pro & iPad 7th + iOs v13 + Safari [#4360, #4546]
+- Fix pixel-rounding logic for blank bars [#4522]
+- Fix `pathbar.visible` updates in `treemap` traces [#4516]
+- Fix `waterfall` `'closest'` hover when cursor is below the size axis [#4537]
+- Fix mapbox layout layer opacity for raster types [#4525]
+- Allow `0` in `grouby` transform `nameformat` templates [#4526]
+- Fix `Plotly.validate` for `valType:'any'` attributes [#4526]
+- Bump `d3-interpolate` to v1.4.0 [#4475]
+- Bump `d3-hierarchy` to v1.1.9 [#4475]
+- Fix typo in annotation `align` attribute description [#4528]
+- Fix `plot_bgcolor` and `paper_bgcolor` attribute description [#4536]
+- Fix `insidetextorientation` description for pie and sunburst traces [#4523]
+
+
+## [1.52.1] -- 2020-01-13
+
+### Fixed
+- Fix handling of `geo.visible` false edge case in order to
+  override `template.layout.geo.show*` attributes [#4483]
+
+
+## [1.52.0] -- 2020-01-08
+
+### Added
+- Add `uniformtext` behavior to `bar`, `funnel`, `waterfall`, `pie`, `funnelarea`,
+ `sunburst` and `treemap` traces [#4420, #4444, #4469]
+- Add "pre-computed" q1/median/q3 input signature for `box` traces [#4432]
+- Add support for legend titles [#4386]
+- Add legend items for `choropleth`, `choroplethmapbox`, `cone`, `densitymapbox`,
+  `heatmap`, `histogram2d`, `isosurface`, `mesh3d`, `streamtube`,
+  `surface`, `volume` traces [#4386, #4441]
+- Add "auto-fitting" behavior to geo subplots via `geo.fitbounds` attribute [#4419]
+- Add support for custom geojson geometries in `choropleth`
+  and `scattergeo` traces [#4419]
+- Add "exclusive" and "inclusive" quartile-computing algorithm to `box` traces
+  via `quartilemethod` attribute [#4432]
+- Add `insidetextorientation` attribute to `pie` and `sunburst` traces [#4420]
+- Add `intensitymode` to allow cell intensity values in `mesh3d` traces [#4446]
+- Add `featureidkey` attribute to `choroplethmapbox`, `choropleth`
+  and `scattergeo` traces [#4419]
+- Add `geo.visible` shortcut attribute [#4419]
+- Add coordinates of mapbox subplot view as a derived property in `plotly_relayout`
+  event data [#4413]
+- Add modebar buttons `zoomInMapbox` and `zoomOutMapbox` [#4398]
+- Add support for typed array in `groupby` transforms `groups` [#4410]
+- Add `notifyOnLogging` config option that allows log/warn/error messages
+  to show up in notifiers pop-ups [#4464]
+- Enable loading locale bundles before plotly.js bundles [#4453]
+- Add Korean `ko` locale [#4315]
+
+### Changed
+- Skip mapbox subplot map position updates while panning/zooming removing
+  potential stuttering [#4418]
+- Optimize mapbox `raster` layout layer updates [#4418]
+- Improve `sunburst` and `treemap` click events behavior [#4454]
+- Improve attribute description of sunburst/treemap `outsidetextfont` [#4463]
+- Update source and dist file headers to 2020 [#4457]
+
+### Fixed
+- Fix `streamtube` traces with numeric string coordinates
+  (bug introduced in 1.51.0) [#4431]
+- Correctly handle different data orders in `isosurface` and `volume` traces [#4431]
+- Fix symbol numbers in `scattergl` and `splom` traces [#4465]
+- Fix `coloraxis` colorbars for `sunburst` and `treemap` with
+  values colorscales [#4444]
+- Fix inside text fitting for `bar`, `funnel` and `waterfall` traces with
+  set `textangle` [#4444]
+- Fix handling of invalid values and zero totals for `pie` and `funnelarea` [#4416]
+- Fix colorbar of `reversescale` colorscales of heatmap-coloring contours [#4437]
+- Fix colorbar templating for "non-root" colorscales [#4470]
+- Fix event data and some hover templates for x/y/z heatmap + contour [#4472]
+- Fix "toggleothers" behavior for graphs with traces not in legend [#4406]
+- Fix `histogram` bingroup logic when `calendars` module is not registered [#4439]
+- Fix "almost equal" `branchvalue: 'total'` partial sum cases [#4442]
+- Fix handling of `treemap` `pathbar.textfont` [#4444]
+
+
+## [1.51.3] -- 2019-12-16
+
+### Fixed
+- Fix `Plotly.Plots.resize` edge cases ensuring now that
+  its promises always resolve [#4392]
+- Fix position of link hover labels in vertical `sankey` [#4404]
+- Fix `box` autorange for traces with "inverted" notched [#4388]
+
+
+## [1.51.2] -- 2019-11-25
+
+### Fixed
+- Fix `texttemplate`formatting on axes that define
+  tick prefixes and suffixes [#4380, #4384]
+- Fix `cmin` and `cmax` computations during color
+  value updates on shared color axes [#4366]
+- Fix `contour` and `histogram2dcontour` legend item
+  rendering when `reversescale` is turned on [#4356]
+- Fix `contour` and `histogram2dcontour` legend item
+  rendering when set to a shared color axis [#4356]
+- Handle missing `vertexcolor` and `facecolor` during `mesh3d` rendering [#4353]
+- No longer coerce `contour` and `colorscale` attributes for `mesh3d`
+  when not needed [#4346]
+- Remove a duplicate function call in `parcoords` code [#4357]
+- Include `opacity` in the `surface` trace plot schema [#4344]
+- Mention `legend.bgcolor` default in attribute description [#4362]
+
+
+## [1.51.1] -- 2019-11-04
+
+### Fixed
+- Fix `scattergl` mising points plot and react (bug introduced in 1.33.0) [#4323]
+- Skip non-numeric values in `image` trace plot [#4325]
+
+
+## [1.51.0] -- 2019-10-29
+
+### Added
+- Add `image` trace type [#4289, #4307, #4313, #4319]
+- Add `automargin` attribute in pie traces, enabling outside text labels
+  to push the margins [#4278]
+- Add `title.standoff` attribute to cartesian axes, setting the
+  distance in pixels between the tick labels and the axis title [#4279]
+- Add `hoverongaps` attribute to `heatmap` and `contour` traces,
+  for suppressing hover labels on missing data [#4291]
+- Add `args2` attribute to `updatemenus` buttons which can be used to
+  create toggle buttons [#4305]
+- Add `zh-CN` locale [#4276, #4310]
+
+### Changed
+- Introduce workarounds for "common" (aka axis) hover label clipping
+  about the graph's viewport [#4298]
+- No longer accept trace `domain` settings where end is not greater
+  than start [#4304]
+
+### Fixed
+- Fix `streamtube` coloring and positioning when generated
+  with non-`xyz` grid signatures [#4271]
+- Fix trace-type update calls on mapbox subplots [#4295]
+- Fix width of `box` and `violin` items on log position axes [#4283]
+- Fix box/meanline offset for one-sided vertical `violin` traces [#4314]
+- Fix missing gaps in some `scattergl` line traces [#4316]
+- Fix event data during scroll on gl3d subplots with orthographic projections [#4292]
+- Handle data with identical positions in `cone` traces [#4306]
+- Handle invalid entry before trying to render `treemap` trace [#4312]
+- Fix `heatmap` and `contour` description for `connectgaps` [#4284]
+
+
+## [1.50.1] -- 2019-10-15
+
+### Fixed
+- Guard against mirrored + automargin `anchor:'free'` axes (bug introduced in 1.50.0) [#4273]
+- Fix `streamtube` trace `starts` case when missing a dimension [#4265]
+- Fix `scattergl` performance for drawing legend items of traces with typed arrays [#4268]
+- Fix legend item style for markers with typed array colors [#4268]
+- Do not attempt to re-hover on exiting subplots [#4269]
+- Fix "layout first" transition race condition [#4262]
+
+
+## [1.50.0] -- 2019-10-07
+
+### Added
+- Add `treemap` trace type [#4185, #4219, #4227, #4242]
+- Add `texttemplate` attribute to all traces that support on-graph text [#4071, #4179]
+- Add date custom formatting in `hovertemplate` and `texttemplate` e.g.
+  `'%{x|%b %-d, %Y}'` [#4071]
+- Add transition support to `bar` trace length, width, on-graph text positioning,
+  marker style and error bars [#4180, #4186]
+- Add attribute `count`, colorscale support and many `hoverinfo` / `textinfo` flags
+  to `sunburst` traces [#4185, #4245]
+- Add constraint info to `parcats` click and hover events [#4211]
+- Add support for legend scrolling via touch interactions [#3873, #4214]
+- Add `ru` and `uk` locales [#4204]
+- Publish minified dist npm packages for the main plotly.js bundle and
+  all our partial bundles [#4169]
+
+### Changed
+- Cap the number of redraws triggered by the auto-margin routine,
+  which should prevent all potential infinite redraw loops [#4216]
+- Improve cartesian axis draw performance by (1) computing its bounding box
+  only when required and (2) using a bounding-box computation cache [#4165]
+- Log message when margin-push values are too big to be considered during
+  auto-margin computations [#4160]
+- Log message when legend position is constrained into graph viewbox [#4160]
+- Process layout image using data URI synchronously [#4105]
+- Adapt default axis ranges to `rangemode` values `'tozero'` and `'nonnegative'` [#4171]
+- Show zeroline even when no grid lines are present [#4189]
+- Use `mapbox-gl` version 1.3.2 [#4230]
+- Make `touchmove` event listener non passive on mobile drag [#4231]
+- Improve `streamtube` trace description [#4181]
+- Improve `indicator` trace description [#4246]
+- Improve legend `x` and `y` attribute descriptions [#4160]
+
+### Fixed
+- Fix attempt at fixing gl3d in Chrome 77 problems [#4256]
+- Fix numerous legend positioning bug [#4160]
+- Fix numerous axis `automargin` bugs [#4165, #4216]
+- Correctly handle `<br>` and `\n` in `scattermapbox` on-graph text [#4176]
+- Fix `scattergl` hover over nulls (bug introduced in 1.45.0) [#4213]
+- Correctly remove off-screen annotations during pan interactions
+  (bug introduced in 1.40.0) [#4170]
+- Fix `contour` and `contourcarpet` label formatting via colorbar settings
+  (bug introduced in 1.48.0) [#4177]
+- Fix background rectangle dimensions for horizontal grouped legends [#4160]
+- Correctly handle non-linear axis types during transitions [#4249]
+- Fix `branchvalues: 'total'` for generated sunburst sectors [#4253]
+- Fix `Download plot` translations [#4148]
+- Fix `fr` translations for "Click to enter --- title" [#4204]
+- Fix tiny zoombox behavior [#4188]
+- Fix rendering of constraint contours with rounded-off edge path [#4102]
+- Fix "autoscale" modebar button bug where it sometimes toggled axis `showspikes` [#4241]
+- Fix multi-axis transition axis-to-axis range "leaks" [#4167]
+- Fix `toggleHover` and `resetViews` modebar buttons for
+  some partial bundle + graph setups [#4184]
+- Correctly list `color-rgba`  module as dependency [#4207]
+- Fix third-party dependency listing for `gl-cone3d` and `gl-streamtube3d` [#4208, #4215]
+- Fix `line.width` attr declaration in `*contour` traces [#4218]
+- Remove hover attribute from `carpet` and `contourcarpet` schema
+  (as they do not support hover yet) [#4102]
+
+
 ## [1.49.5] -- 2019-09-18
 
 ### Fixed

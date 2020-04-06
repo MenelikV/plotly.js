@@ -1,5 +1,5 @@
 /**
-* Copyright 2012-2019, Plotly, Inc.
+* Copyright 2012-2020, Plotly, Inc.
 * All rights reserved.
 *
 * This source code is licensed under the MIT license found in the
@@ -22,6 +22,8 @@ var axisIDs = require('./cartesian/axis_ids');
 
 var animationAttrs = require('./animation_attributes');
 var frameAttrs = require('./frame_attributes');
+
+var getModuleCalcData = require('../plots/get_data').getModuleCalcData;
 
 var relinkPrivateKeys = Lib.relinkPrivateKeys;
 var _ = Lib._;
@@ -74,12 +76,15 @@ plots.redrawText = function(gd) {
 plots.resize = function(gd) {
     gd = Lib.getGraphDiv(gd);
 
-    return new Promise(function(resolve, reject) {
+    var resolveLastResize;
+    var p = new Promise(function(resolve, reject) {
         if(!gd || Lib.isHidden(gd)) {
             reject(new Error('Resize must be passed a displayed plot div element.'));
         }
 
         if(gd._redrawTimer) clearTimeout(gd._redrawTimer);
+        if(gd._resolveResize) resolveLastResize = gd._resolveResize;
+        gd._resolveResize = resolve;
 
         gd._redrawTimer = setTimeout(function() {
             // return if there is nothing to resize or is hidden
@@ -99,10 +104,17 @@ plots.resize = function(gd) {
 
             Registry.call('relayout', gd, {autosize: true}).then(function() {
                 gd.changed = oldchanged;
-                resolve(gd);
+                // Only resolve if a new call hasn't been made!
+                if(gd._resolveResize === resolve) {
+                    delete gd._resolveResize;
+                    resolve(gd);
+                }
             });
         }, 100);
     });
+
+    if(resolveLastResize) resolveLastResize(p);
+    return p;
 };
 
 
@@ -203,9 +215,10 @@ function positionPlayWithData(gd, container) {
 }
 
 plots.sendDataToCloud = function(gd) {
-    gd.emit('plotly_beforeexport');
-
     var baseUrl = (window.PLOTLYENV || {}).BASE_URL || gd._context.plotlyServerURL;
+    if(!baseUrl) return;
+
+    gd.emit('plotly_beforeexport');
 
     var hiddenformDiv = d3.select(gd)
         .append('div')
@@ -925,7 +938,7 @@ plots.linkSubplots = function(newFullData, newFullLayout, oldFullData, oldFullLa
         // this loop can be costly, so only compute it when required
         if(ax._counterAxes.length && (
             (ax.spikemode && ax.spikemode.indexOf('across') !== -1) ||
-            (ax.automargin && ax.mirror) ||
+            (ax.automargin && ax.mirror && ax.anchor !== 'free') ||
             Registry.getComponentMethod('rangeslider', 'isVisible')(ax)
         )) {
             var min = 1;
@@ -1260,10 +1273,13 @@ plots.supplyTraceDefaults = function(traceIn, traceOut, colorIndex, layout, trac
             var subplots = layout._subplots;
             var subplotId = '';
 
-            // TODO - currently if we draw an empty gl2d subplot, it draws
-            // nothing then gets stuck and you can't get it back without newPlot
-            // sort this out in the regl refactor? but for now just drop empty gl2d subplots
-            if(basePlotModule.name !== 'gl2d' || visible) {
+            if(
+                visible ||
+                basePlotModule.name !== 'gl2d' // for now just drop empty gl2d subplots
+                // TODO - currently if we draw an empty gl2d subplot, it draws
+                // nothing then gets stuck and you can't get it back without newPlot
+                // sort this out in the regl refactor?
+            ) {
                 if(Array.isArray(subplotAttr)) {
                     for(i = 0; i < subplotAttr.length; i++) {
                         var attri = subplotAttr[i];
@@ -1289,9 +1305,14 @@ plots.supplyTraceDefaults = function(traceIn, traceOut, colorIndex, layout, trac
         coerce('meta');
 
         if(Registry.traceIs(traceOut, 'showLegend')) {
-            traceOut._dfltShowLegend = true;
-            coerce('showlegend');
+            Lib.coerce(traceIn, traceOut,
+                _module.attributes.showlegend ? _module.attributes : plots.attributes,
+                'showlegend'
+            );
+
             coerce('legendgroup');
+
+            traceOut._dfltShowLegend = true;
         } else {
             traceOut._dfltShowLegend = false;
         }
@@ -1455,9 +1476,14 @@ plots.supplyLayoutGlobalDefaults = function(layoutIn, layoutOut, formatObj) {
     coerce('title.pad.b');
     coerce('title.pad.l');
 
+    var uniformtextMode = coerce('uniformtext.mode');
+    if(uniformtextMode) {
+        coerce('uniformtext.minsize');
+    }
+
     // Make sure that autosize is defaulted to *true*
     // on layouts with no set width and height for backward compatibly,
-    // in particular https://plot.ly/javascript/responsive-fluid-layout/
+    // in particular https://plotly.com/javascript/responsive-fluid-layout/
     //
     // Before https://github.com/plotly/plotly.js/pull/635 ,
     // layouts with no set width and height were set temporary set to 'initial'
@@ -2012,9 +2038,10 @@ plots.didMarginChange = function(margin0, margin1) {
  *      keepall: keep data and src
  * @param {String} output If you specify 'object', the result will not be stringified
  * @param {Boolean} useDefaults If truthy, use _fullLayout and _fullData
+ * @param {Boolean} includeConfig If truthy, include _context
  * @returns {Object|String}
  */
-plots.graphJson = function(gd, dataonly, mode, output, useDefaults) {
+plots.graphJson = function(gd, dataonly, mode, output, useDefaults, includeConfig) {
     // if the defaults aren't supplied yet, we need to do that...
     if((useDefaults && dataonly && !gd._fullData) ||
             (useDefaults && !dataonly && !gd._fullLayout)) {
@@ -2025,26 +2052,29 @@ plots.graphJson = function(gd, dataonly, mode, output, useDefaults) {
     var layout = (useDefaults) ? gd._fullLayout : gd.layout;
     var frames = (gd._transitionData || {})._frames;
 
-    function stripObj(d) {
+    function stripObj(d, keepFunction) {
         if(typeof d === 'function') {
-            return null;
+            return keepFunction ? '_function_' : null;
         }
         if(Lib.isPlainObject(d)) {
             var o = {};
-            var v, src;
-            for(v in d) {
+            var src;
+            Object.keys(d).sort().forEach(function(v) {
                 // remove private elements and functions
                 // _ is for private, [ is a mistake ie [object Object]
-                if(typeof d[v] === 'function' ||
-                        ['_', '['].indexOf(v.charAt(0)) !== -1) {
-                    continue;
+                if(['_', '['].indexOf(v.charAt(0)) !== -1) return;
+
+                // if a function, add if necessary then move on
+                if(typeof d[v] === 'function') {
+                    if(keepFunction) o[v] = '_function';
+                    return;
                 }
 
                 // look for src/data matches and remove the appropriate one
                 if(mode === 'keepdata') {
                     // keepdata: remove all ...src tags
                     if(v.substr(v.length - 3) === 'src') {
-                        continue;
+                        return;
                     }
                 } else if(mode === 'keepstream') {
                     // keep sourced data if it's being streamed.
@@ -2053,7 +2083,7 @@ plots.graphJson = function(gd, dataonly, mode, output, useDefaults) {
                     src = d[v + 'src'];
                     if(typeof src === 'string' && src.indexOf(':') > 0) {
                         if(!Lib.isPlainObject(d.stream)) {
-                            continue;
+                            return;
                         }
                     }
                 } else if(mode !== 'keepall') {
@@ -2061,18 +2091,18 @@ plots.graphJson = function(gd, dataonly, mode, output, useDefaults) {
                     // if the source tag is well-formed
                     src = d[v + 'src'];
                     if(typeof src === 'string' && src.indexOf(':') > 0) {
-                        continue;
+                        return;
                     }
                 }
 
                 // OK, we're including this... recurse into it
-                o[v] = stripObj(d[v]);
-            }
+                o[v] = stripObj(d[v], keepFunction);
+            });
             return o;
         }
 
         if(Array.isArray(d)) {
-            return d.map(stripObj);
+            return d.map(function(x) {return stripObj(x, keepFunction);});
         }
 
         if(Lib.isTypedArray(d)) {
@@ -2100,6 +2130,8 @@ plots.graphJson = function(gd, dataonly, mode, output, useDefaults) {
     if(gd.framework && gd.framework.isPolar) obj = gd.framework.getConfig();
 
     if(frames) obj.frames = stripObj(frames);
+
+    if(includeConfig) obj.config = stripObj(gd._context, true);
 
     return (output === 'object') ? obj : JSON.stringify(obj);
 };
@@ -2460,10 +2492,14 @@ plots.transition = function(gd, data, layout, traces, frameOpts, transitionOpts)
                     yr1 = newLayout[ya._name].range.slice();
                 }
 
-                if(xr0 && xr1 && (xr0[0] !== xr1[0] || xr0[1] !== xr1[1])) {
+                if(xr0 && xr1 &&
+                    (xa.r2l(xr0[0]) !== xa.r2l(xr1[0]) || xa.r2l(xr0[1]) !== xa.r2l(xr1[1]))
+                ) {
                     editX = {xr0: xr0, xr1: xr1};
                 }
-                if(yr0 && yr1 && (yr0[0] !== yr1[0] || yr0[1] !== yr1[1])) {
+                if(yr0 && yr1 &&
+                    (ya.r2l(yr0[0]) !== ya.r2l(yr1[0]) || ya.r2l(yr0[1]) !== ya.r2l(yr1[1]))
+                ) {
                     editY = {yr0: yr0, yr1: yr1};
                 }
 
@@ -2557,10 +2593,10 @@ plots.transitionFromReact = function(gd, restyleFlags, relayoutFlags, oldFullLay
             var editX = null;
             var editY = null;
 
-            if(xr0[0] !== xr1[0] || xr0[1] !== xr1[1]) {
+            if(xa.r2l(xr0[0]) !== xa.r2l(xr1[0]) || xa.r2l(xr0[1]) !== xa.r2l(xr1[1])) {
                 editX = {xr0: xr0, xr1: xr1};
             }
-            if(yr0[0] !== yr1[0] || yr0[1] !== yr1[1]) {
+            if(ya.r2l(yr0[0]) !== ya.r2l(yr1[0]) || ya.r2l(yr0[1]) !== ya.r2l(yr1[1])) {
                 editY = {yr0: yr0, yr1: yr1};
             }
 
@@ -2605,14 +2641,14 @@ plots.transitionFromReact = function(gd, restyleFlags, relayoutFlags, oldFullLay
                 axisTransitionOpts = Lib.extendFlat({}, transitionOpts, {duration: 0});
                 transitionedTraces = allTraceIndices;
                 traceTransitionOpts = transitionOpts;
-                transitionTraces();
                 setTimeout(transitionAxes, transitionOpts.duration);
+                transitionTraces();
             } else {
                 axisTransitionOpts = transitionOpts;
                 transitionedTraces = null;
                 traceTransitionOpts = Lib.extendFlat({}, transitionOpts, {duration: 0});
+                setTimeout(transitionTraces, axisTransitionOpts.duration);
                 transitionAxes();
-                transitionTraces();
             }
         } else if(axEdits.length) {
             axisTransitionOpts = transitionOpts;
@@ -2789,9 +2825,10 @@ plots.doCalcdata = function(gd, traces) {
     gd._hmpixcount = 0;
     gd._hmlumcount = 0;
 
-    // for sharing colors across pies / sunbursts / funnelarea (and for legend)
+    // for sharing colors across pies / sunbursts / treemap / funnelarea (and for legend)
     fullLayout._piecolormap = {};
     fullLayout._sunburstcolormap = {};
+    fullLayout._treemapcolormap = {};
     fullLayout._funnelareacolormap = {};
 
     // If traces were specified and this trace was not included,
@@ -2819,6 +2856,15 @@ plots.doCalcdata = function(gd, traces) {
             fullLayout[polarIds[i]].radialaxis,
             fullLayout[polarIds[i]].angularaxis
         );
+    }
+
+    // clear relinked cmin/cmax values in shared axes to start aggregation from scratch
+    for(var k in fullLayout._colorAxes) {
+        var cOpts = fullLayout[k];
+        if(cOpts.cauto !== false) {
+            delete cOpts.cmin;
+            delete cOpts.cmax;
+        }
     }
 
     var hasCalcTransform = false;
@@ -2898,7 +2944,7 @@ plots.doCalcdata = function(gd, traces) {
         calcdata[i] = cd;
     }
 
-    setupAxisCategories(axList, fullData);
+    setupAxisCategories(axList, fullData, fullLayout);
 
     // 'transform' loop - must calc container traces first
     // so that if their dependent traces can get transform properly
@@ -2906,7 +2952,7 @@ plots.doCalcdata = function(gd, traces) {
     for(i = 0; i < fullData.length; i++) transformCalci(i);
 
     // clear stuff that should recomputed in 'regular' loop
-    if(hasCalcTransform) setupAxisCategories(axList, fullData);
+    if(hasCalcTransform) setupAxisCategories(axList, fullData, fullLayout);
 
     // 'regular' loop - make sure container traces (eg carpet) calc before
     // contained traces (eg contourcarpet)
@@ -3111,12 +3157,30 @@ function sortAxisCategoriesByValue(axList, gd) {
     return affectedTraces;
 }
 
-function setupAxisCategories(axList, fullData) {
-    for(var i = 0; i < axList.length; i++) {
-        var ax = axList[i];
+function setupAxisCategories(axList, fullData, fullLayout) {
+    var axLookup = {};
+    var i, ax, axId;
+
+    for(i = 0; i < axList.length; i++) {
+        ax = axList[i];
+        axId = ax._id;
+
         ax.clearCalc();
         if(ax.type === 'multicategory') {
             ax.setupMultiCategory(fullData);
+        }
+
+        axLookup[ax._id] = 1;
+    }
+
+    // look into match groups for 'missing' axes
+    var matchGroups = fullLayout._axisMatchGroups || [];
+    for(i = 0; i < matchGroups.length; i++) {
+        for(axId in matchGroups[i]) {
+            if(!axLookup[axId]) {
+                ax = fullLayout[axisIDs.id2name(axId)];
+                ax.clearCalc();
+            }
         }
     }
 }
@@ -3220,4 +3284,19 @@ plots.generalUpdatePerTraceModule = function(gd, subplot, subplotCalcData, subpl
 
     // update moduleName -> calcData hash
     subplot.traceHash = traceHash;
+};
+
+plots.plotBasePlot = function(desiredType, gd, traces, transitionOpts, makeOnCompleteCallback) {
+    var _module = Registry.getModule(desiredType);
+    var cdmodule = getModuleCalcData(gd.calcdata, _module)[0];
+    _module.plot(gd, cdmodule, transitionOpts, makeOnCompleteCallback);
+};
+
+plots.cleanBasePlot = function(desiredType, newFullData, newFullLayout, oldFullData, oldFullLayout) {
+    var had = (oldFullLayout._has && oldFullLayout._has(desiredType));
+    var has = (newFullLayout._has && newFullLayout._has(desiredType));
+
+    if(had && !has) {
+        oldFullLayout['_' + desiredType + 'layer'].selectAll('g.trace').remove();
+    }
 };

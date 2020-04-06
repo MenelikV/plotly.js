@@ -1,5 +1,5 @@
 /**
-* Copyright 2012-2019, Plotly, Inc.
+* Copyright 2012-2020, Plotly, Inc.
 * All rights reserved.
 *
 * This source code is licensed under the MIT license found in the
@@ -12,6 +12,7 @@
 var axisIds = require('../../plots/cartesian/axis_ids');
 var scatterSubTypes = require('../../traces/scatter/subtypes');
 var Registry = require('../../registry');
+var isUnifiedHover = require('../fx/helpers').isUnifiedHover;
 
 var createModeBar = require('./modebar');
 var modeBarButtons = require('./buttons');
@@ -85,6 +86,7 @@ function getButtonGroups(gd) {
     var hasPolar = fullLayout._has('polar');
     var hasSankey = fullLayout._has('sankey');
     var allAxesFixed = areAllAxesFixed(fullLayout);
+    var hasUnifiedHoverLabel = isUnifiedHover(fullLayout.hovermode);
 
     var groups = [];
 
@@ -126,6 +128,7 @@ function getButtonGroups(gd) {
         hoverGroup = ['hoverClosest3d'];
         resetGroup = ['resetCameraDefault3d', 'resetCameraLastSave3d'];
     } else if(hasMapbox) {
+        zoomGroup = ['zoomInMapbox', 'zoomOutMapbox'];
         hoverGroup = ['toggleHover'];
         resetGroup = ['resetViewMapbox'];
     } else if(hasGL2D) {
@@ -145,7 +148,7 @@ function getButtonGroups(gd) {
     if(hasCartesian) {
         hoverGroup = ['toggleSpikelines', 'hoverClosestCartesian', 'hoverCompareCartesian'];
     }
-    if(hasNoHover(fullData)) {
+    if(hasNoHover(fullData) || hasUnifiedHoverLabel) {
         hoverGroup = [];
     }
 

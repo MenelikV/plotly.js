@@ -1,5 +1,5 @@
 /**
-* Copyright 2012-2019, Plotly, Inc.
+* Copyright 2012-2020, Plotly, Inc.
 * All rights reserved.
 *
 * This source code is licensed under the MIT license found in the
@@ -32,9 +32,11 @@ var ONESEC = constants.ONESEC;
 var MINUS_SIGN = constants.MINUS_SIGN;
 var BADNUM = constants.BADNUM;
 
-var MID_SHIFT = require('../../constants/alignment').MID_SHIFT;
-var LINE_SPACING = require('../../constants/alignment').LINE_SPACING;
-var OPPOSITE_SIDE = require('../../constants/alignment').OPPOSITE_SIDE;
+var alignmentConstants = require('../../constants/alignment');
+var MID_SHIFT = alignmentConstants.MID_SHIFT;
+var CAP_SHIFT = alignmentConstants.CAP_SHIFT;
+var LINE_SPACING = alignmentConstants.LINE_SPACING;
+var OPPOSITE_SIDE = alignmentConstants.OPPOSITE_SIDE;
 
 var axes = module.exports = {};
 
@@ -524,7 +526,10 @@ axes.prepTicks = function(ax) {
         // have explicit tickvals without tick text
         if(ax.tickmode === 'array') nt *= 100;
 
-        axes.autoTicks(ax, Math.abs(rng[1] - rng[0]) / nt);
+
+        ax._roughDTick = (Math.abs(rng[1] - rng[0]) - (ax._lBreaks || 0)) / nt;
+        axes.autoTicks(ax, ax._roughDTick);
+
         // check for a forced minimum dtick
         if(ax._minDtick > 0 && ax.dtick < ax._minDtick * 2) {
             ax.dtick = ax._minDtick;
@@ -571,7 +576,6 @@ axes.calcTicks = function calcTicks(ax) {
     if((ax._tmin < startTick) !== axrev) return [];
 
     // return the full set of tick vals
-    var tickVals = [];
     if(ax.type === 'category' || ax.type === 'multicategory') {
         endTick = (axrev) ? Math.max(-0.5, endTick) :
             Math.min(ax._categories.length - 0.5, endTick);
@@ -579,25 +583,72 @@ axes.calcTicks = function calcTicks(ax) {
 
     var isDLog = (ax.type === 'log') && !(isNumeric(ax.dtick) || ax.dtick.charAt(0) === 'L');
 
-    var xPrevious = null;
-    var maxTicks = Math.max(1000, ax._length || 0);
-    for(var x = ax._tmin;
-            (axrev) ? (x >= endTick) : (x <= endTick);
-            x = axes.tickIncrement(x, ax.dtick, axrev, ax.calendar)) {
-        // prevent infinite loops - no more than one tick per pixel,
-        // and make sure each value is different from the previous
-        if(tickVals.length > maxTicks || x === xPrevious) break;
-        xPrevious = x;
+    var tickVals;
+    function generateTicks() {
+        var xPrevious = null;
+        var maxTicks = Math.max(1000, ax._length || 0);
+        tickVals = [];
+        for(var x = ax._tmin;
+                (axrev) ? (x >= endTick) : (x <= endTick);
+                x = axes.tickIncrement(x, ax.dtick, axrev, ax.calendar)) {
+            // prevent infinite loops - no more than one tick per pixel,
+            // and make sure each value is different from the previous
+            if(tickVals.length > maxTicks || x === xPrevious) break;
+            xPrevious = x;
 
-        var minor = false;
-        if(isDLog && (x !== (x | 0))) {
-            minor = true;
+            var minor = false;
+            if(isDLog && (x !== (x | 0))) {
+                minor = true;
+            }
+
+            tickVals.push({
+                minor: minor,
+                value: x
+            });
+        }
+    }
+
+    generateTicks();
+
+    if(ax.rangebreaks) {
+        // replace ticks inside breaks that would get a tick
+        if(ax.tickmode === 'auto') {
+            for(var t = 0; t < tickVals.length; t++) {
+                var value = tickVals[t].value;
+                if(ax.maskBreaks(value) === BADNUM) {
+                    // find which break we are in
+                    for(var k = 0; k < ax._rangebreaks.length; k++) {
+                        var brk = ax._rangebreaks[k];
+                        if(value >= brk.min && value < brk.max) {
+                            tickVals[t].value = brk.max; // replace with break end
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
-        tickVals.push({
-            minor: minor,
-            value: x
-        });
+        // reduce ticks
+        var len = tickVals.length;
+        if(len > 2) {
+            var tf2 = 2 * (ax.tickfont ? ax.tickfont.size : 12);
+
+            var newTickVals = [];
+            var prevPos;
+
+            var dir = axrev ? 1 : -1;
+            var first = axrev ? 0 : len - 1;
+            var last = axrev ? len - 1 : 0;
+            for(var q = first; dir * q <= dir * last; q += dir) { // apply reverse loop to pick greater values in breaks first
+                var pos = ax.c2p(tickVals[q].value);
+
+                if(prevPos === undefined || Math.abs(pos - prevPos) > tf2) {
+                    prevPos = pos;
+                    newTickVals.push(tickVals[q]);
+                }
+            }
+            tickVals = newTickVals.reverse();
+        }
     }
 
     // If same angle over a full circle, the last tick vals is a duplicate.
@@ -619,11 +670,14 @@ axes.calcTicks = function calcTicks(ax) {
 
     var ticksOut = new Array(tickVals.length);
     for(var i = 0; i < tickVals.length; i++) {
+        var _minor = tickVals[i].minor;
+        var _value = tickVals[i].value;
+
         ticksOut[i] = axes.tickText(
             ax,
-            tickVals[i].value,
+            _value,
             false, // hover
-            tickVals[i].minor // noSuffixPrefix
+            _minor // noSuffixPrefix
         );
     }
 
@@ -667,6 +721,13 @@ function arrayTicks(ax) {
     }
 
     if(j < vals.length) ticksOut.splice(j, vals.length - j);
+
+    if(ax.rangebreaks) {
+        // remove ticks falling inside rangebreaks
+        ticksOut = ticksOut.filter(function(d) {
+            return ax.maskBreaks(d.x) !== BADNUM;
+        });
+    }
 
     return ticksOut;
 }
@@ -724,7 +785,8 @@ axes.autoTicks = function(ax, roughDTick) {
             roughDTick /= ONEAVGMONTH;
             ax.dtick = 'M' + roundDTick(roughDTick, 1, roundBase24);
         } else if(roughX2 > ONEDAY) {
-            ax.dtick = roundDTick(roughDTick, ONEDAY, roundDays);
+            ax.dtick = roundDTick(roughDTick, ONEDAY, ax._hasDayOfWeekBreaks ? [1, 7, 14] : roundDays);
+
             // get week ticks on sunday
             // this will also move the base tick off 2000-01-01 if dtick is
             // 2 or 3 days... but that's a weird enough case that we'll ignore it.
@@ -964,7 +1026,7 @@ axes.tickText = function(ax, x, hover, noSuffixPrefix) {
 
     if(arrayMode && Array.isArray(ax.ticktext)) {
         var rng = Lib.simpleMap(ax.range, ax.r2l);
-        var minDiff = Math.abs(rng[1] - rng[0]) / 10000;
+        var minDiff = (Math.abs(rng[1] - rng[0]) - (ax._lBreaks || 0)) / 10000;
 
         for(i = 0; i < ax.ticktext.length; i++) {
             if(Math.abs(x - tickVal2l(ax.tickvals[i])) < minDiff) break;
@@ -1667,10 +1729,14 @@ axes.drawOne = function(gd, ax, opts) {
     var axId = ax._id;
     var axLetter = axId.charAt(0);
     var counterLetter = axes.counterLetter(axId);
+    var mainPlotinfo = fullLayout._plots[ax._mainSubplot];
+
+    // this happens when updating matched group with 'missing' axes
+    if(!mainPlotinfo) return;
+
+    var mainAxLayer = mainPlotinfo[axLetter + 'axislayer'];
     var mainLinePosition = ax._mainLinePosition;
     var mainMirrorPosition = ax._mainMirrorPosition;
-    var mainPlotinfo = fullLayout._plots[ax._mainSubplot];
-    var mainAxLayer = mainPlotinfo[axLetter + 'axislayer'];
 
     var vals = ax._vals = axes.calcTicks(ax);
 
@@ -1831,7 +1897,6 @@ axes.drawOne = function(gd, ax, opts) {
 
     if(ax.type === 'multicategory') {
         var pad = {x: 2, y: 10}[axLetter];
-        var sgn = {l: -1, t: -1, r: 1, b: 1}[ax.side.charAt(0)];
 
         seq.push(function() {
             var bboxKey = {x: 'height', y: 'width'}[axLetter];
@@ -1845,19 +1910,23 @@ axes.drawOne = function(gd, ax, opts) {
                 repositionOnUpdate: true,
                 secondary: true,
                 transFn: transFn,
-                labelFns: axes.makeLabelFns(ax, mainLinePosition + standoff * sgn)
+                labelFns: axes.makeLabelFns(ax, mainLinePosition + standoff * tickSigns[4])
             });
         });
 
         seq.push(function() {
-            ax._depth = sgn * (getLabelLevelBbox('tick2')[ax.side] - mainLinePosition);
+            ax._depth = tickSigns[4] * (getLabelLevelBbox('tick2')[ax.side] - mainLinePosition);
 
             return drawDividers(gd, ax, {
                 vals: dividerVals,
                 layer: mainAxLayer,
-                path: axes.makeTickPath(ax, mainLinePosition, sgn, ax._depth),
+                path: axes.makeTickPath(ax, mainLinePosition, tickSigns[4], ax._depth),
                 transFn: transFn
             });
+        });
+    } else if(ax.title.hasOwnProperty('standoff')) {
+        seq.push(function() {
+            ax._depth = tickSigns[4] * (getLabelLevelBbox()[ax.side] - mainLinePosition);
         });
     }
 
@@ -1936,13 +2005,10 @@ axes.drawOne = function(gd, ax, opts) {
                 ax._anchorAxis.domain[domainIndices[0]];
 
             if(ax.title.text !== fullLayout._dfltTitle[axLetter]) {
-                var extraLines = (ax.title.text.match(svgTextUtils.BR_TAG_ALL) || []).length;
-                push[s] += extraLines ?
-                    ax.title.font.size * (extraLines + 1) * LINE_SPACING :
-                    ax.title.font.size;
+                push[s] += approxTitleDepth(ax) + (ax.title.standoff || 0);
             }
 
-            if(ax.mirror) {
+            if(ax.mirror && ax.anchor !== 'free') {
                 mirrorPush = {x: 0, y: 0, r: 0, l: 0, t: 0, b: 0};
 
                 mirrorPush[sMirror] = ax.linewidth;
@@ -2097,6 +2163,7 @@ function calcLabelLevelBbox(ax, cls) {
  *  - [1]: sign for bottom/left ticks (i.e. positive SVG direction)
  *  - [2]: sign for ticks corresponding to 'ax.side'
  *  - [3]: sign for ticks mirroring 'ax.side'
+ *  - [4]: sign of arrow starting at axis pointing towards margin
  */
 axes.getTickSigns = function(ax) {
     var axLetter = ax._id.charAt(0);
@@ -2106,6 +2173,10 @@ axes.getTickSigns = function(ax) {
     // then we flip if outside XOR y axis
     if((ax.ticks !== 'inside') === (axLetter === 'x')) {
         out = out.map(function(v) { return -v; });
+    }
+    // independent of `ticks`; do not flip this one
+    if(ax.side) {
+        out.push({l: -1, t: -1, r: 1, b: 1}[ax.side.charAt(0)]);
     }
     return out;
 };
@@ -2699,6 +2770,46 @@ axes.getPxPosition = function(gd, ax) {
     }
 };
 
+/**
+ * Approximate axis title depth (w/o computing its bounding box)
+ *
+ * @param {object} ax (full) axis object
+ *  - {string} title.text
+ *  - {number} title.font.size
+ *  - {number} title.standoff
+ * @return {number} (in px)
+ */
+function approxTitleDepth(ax) {
+    var fontSize = ax.title.font.size;
+    var extraLines = (ax.title.text.match(svgTextUtils.BR_TAG_ALL) || []).length;
+    if(ax.title.hasOwnProperty('standoff')) {
+        return extraLines ?
+            fontSize * (CAP_SHIFT + (extraLines * LINE_SPACING)) :
+            fontSize * CAP_SHIFT;
+    } else {
+        return extraLines ?
+            fontSize * (extraLines + 1) * LINE_SPACING :
+            fontSize;
+    }
+}
+
+/**
+ * Draw axis title, compute default standoff if necessary
+ *
+ * @param {DOM element} gd
+ * @param {object} ax (full) axis object
+ *  - {string} _id
+ *  - {string} _name
+ *  - {string} side
+ *  - {number} title.font.size
+ *  - {object} _selections
+ *
+ *  - {number} _depth
+ *  - {number} title.standoff
+ *  OR
+ *  - {number} linewidth
+ *  - {boolean} showticklabels
+ */
 function drawTitle(gd, ax) {
     var fullLayout = gd._fullLayout;
     var axId = ax._id;
@@ -2706,11 +2817,26 @@ function drawTitle(gd, ax) {
     var fontSize = ax.title.font.size;
 
     var titleStandoff;
-    if(ax.type === 'multicategory') {
-        titleStandoff = ax._depth;
+
+    if(ax.title.hasOwnProperty('standoff')) {
+        titleStandoff = ax._depth + ax.title.standoff + approxTitleDepth(ax);
     } else {
-        var offsetBase = 1.5;
-        titleStandoff = 10 + fontSize * offsetBase + (ax.linewidth ? ax.linewidth - 1 : 0);
+        if(ax.type === 'multicategory') {
+            titleStandoff = ax._depth;
+        } else {
+            var offsetBase = 1.5;
+            titleStandoff = 10 + fontSize * offsetBase + (ax.linewidth ? ax.linewidth - 1 : 0);
+        }
+
+        if(axLetter === 'x') {
+            titleStandoff += ax.side === 'top' ?
+                fontSize * (ax.showticklabels ? 1 : 0) :
+                fontSize * (ax.showticklabels ? 1.5 : 0.5);
+        } else {
+            titleStandoff += ax.side === 'right' ?
+                fontSize * (ax.showticklabels ? 1 : 0.5) :
+                fontSize * (ax.showticklabels ? 0.5 : 0);
+        }
     }
 
     var pos = axes.getPxPosition(gd, ax);
@@ -2718,23 +2844,10 @@ function drawTitle(gd, ax) {
 
     if(axLetter === 'x') {
         x = ax._offset + ax._length / 2;
-
-        if(ax.side === 'top') {
-            y = -titleStandoff - fontSize * (ax.showticklabels ? 1 : 0);
-        } else {
-            y = titleStandoff + fontSize * (ax.showticklabels ? 1.5 : 0.5);
-        }
-        y += pos;
+        y = (ax.side === 'top') ? pos - titleStandoff : pos + titleStandoff;
     } else {
         y = ax._offset + ax._length / 2;
-
-        if(ax.side === 'right') {
-            x = titleStandoff + fontSize * (ax.showticklabels ? 1 : 0.5);
-        } else {
-            x = -titleStandoff - fontSize * (ax.showticklabels ? 0.5 : 0);
-        }
-        x += pos;
-
+        x = (ax.side === 'right') ? pos + titleStandoff : pos - titleStandoff;
         transform = {rotate: '-90', offset: 0};
     }
 
@@ -2752,6 +2865,10 @@ function drawTitle(gd, ax) {
             var translation = Drawing.getTranslate(tickLabels.node().parentNode);
             avoid.offsetLeft = translation.x;
             avoid.offsetTop = translation.y;
+        }
+
+        if(ax.title.hasOwnProperty('standoff')) {
+            avoid.pad = 0;
         }
     }
 
@@ -2771,6 +2888,7 @@ axes.shouldShowZeroLine = function(gd, ax, counterAxis) {
         (rng[0] * rng[1] <= 0) &&
         ax.zeroline &&
         (ax.type === 'linear' || ax.type === '-') &&
+        !(ax.rangebreaks && ax.maskBreaks(0) === BADNUM) &&
         (
             clipEnds(ax, 0) ||
             !anyCounterAxLineAtZero(gd, ax, counterAxis, rng) ||

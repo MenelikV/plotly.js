@@ -1,5 +1,5 @@
 /**
-* Copyright 2012-2019, Plotly, Inc.
+* Copyright 2012-2020, Plotly, Inc.
 * All rights reserved.
 *
 * This source code is licensed under the MIT license found in the
@@ -46,6 +46,14 @@ function crossTraceCalc(gd, plotinfo) {
                 calcTracesHorz.push(calcTraces[i]);
             } else {
                 calcTracesVert.push(calcTraces[i]);
+            }
+
+            if(fullTrace._computePh) {
+                var cd = gd.calcdata[i];
+                for(var j = 0; j < cd.length; j++) {
+                    if(typeof cd[j].ph0 === 'function') cd[j].ph0 = cd[j].ph0();
+                    if(typeof cd[j].ph1 === 'function') cd[j].ph1 = cd[j].ph1();
+                }
             }
         }
     }

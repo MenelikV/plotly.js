@@ -1121,7 +1121,7 @@ describe('end-to-end scatter tests', function() {
 
             var legendPts = d3.select('.legend').selectAll('.scatterpts');
             expect(legendPts.size()).toBe(1, '# legend items');
-            expect(getColor(legendPts.node())).toBe('rgb(0, 0, 0)', 'legend pt color');
+            expect(getColor(legendPts.node())).toBe('rgb(0, 255, 0)', 'legend pt color');
             expect(getMarkerSize(legendPts.node())).toBe(16, 'legend pt size');
         })
         .catch(failTest)
@@ -1239,7 +1239,9 @@ describe('end-to-end scatter tests', function() {
         .catch(failTest)
         .then(done);
     });
+});
 
+describe('Text templates on scatter traces:', function() {
     checkTextTemplate([{
         type: 'scatter',
         mode: 'markers+lines+text',
@@ -1248,6 +1250,21 @@ describe('end-to-end scatter tests', function() {
     }], '.textpoint', [
       ['%{y}', ['1', '5', '3', '2']],
       [['%{y}', '%{x}-%{y}'], ['1', '1-5', '', '']]
+    ]);
+
+    checkTextTemplate({
+        data: [{
+            type: 'scatter',
+            mode: 'text',
+            x: ['a', 'b'],
+            y: ['1000', '1200']
+        }],
+        layout: {
+            xaxis: { tickprefix: '*', ticksuffix: '*' },
+            yaxis: { tickprefix: '$', ticksuffix: ' !', tickformat: '.2f'}
+        }
+    }, '.textpoint', [
+        ['%{x} is %{y}', ['*a* is $1000.00 !', '*b* is $1200.00 !']]
     ]);
 });
 
